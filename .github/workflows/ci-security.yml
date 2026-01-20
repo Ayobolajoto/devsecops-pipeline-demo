@@ -1,0 +1,53 @@
+name: DevSecOps Security Gate
+
+on:
+    push:
+        branches: ["main"]
+    pull_request:
+        branches: ["main"]
+
+jobs:
+    build-and-scan:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            # 1. Build the image locally (don't push yet!)
+            - name: Build local image for scanning
+              uses: docker/build-push-action@v5
+              with:
+                  context: .
+                  load: true # This loads the image into the local Docker daemon
+                  tags: devsecops-demo:latest
+
+            # 2. Run Trivy Vulnerability Scanner
+            - name: Run Trivy vulnerability scanner
+              uses: aquasecurity/trivy-action@master
+              with:
+                  image-ref: "devsecops-demo:latest"
+                  format: "table"
+                  # This is the "Gate": The build will FAIL if it finds CRITICAL vulnerabilities
+                  exit-code: "1"
+                  ignore-unfixed: true
+                  vuln-type: "os,library"
+                  severity: "CRITICAL"
+
+            # 3. Generate SBOM (Software Bill of Materials)
+            # This is a key requirement for modern high-security environments
+            - name: Generate SBOM
+              uses: anchore/sbom-action@v0
+              with:
+                  image: devsecops-demo:latest
+                  format: spdx-json
+                  output-file: ./sbom.spdx.json
+
+            - name: Upload SBOM Artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: sbom-report
+                  path: ./sbom.spdx.json
